@@ -1,0 +1,28 @@
+theory Logic_Axiom_2
+  imports Main
+begin
+
+
+(*(a⇒b)⇒a = a*)
+(*
+a⇒b ≡ ¬a ∨ b.
+(¬a∨b) ⇒ a ≡ ¬(¬a∨b) ∨ a ≡ (a ∧ ¬b) ∨ a ≡ a ∨ (a ∧ ¬b) ≡ a
+*)
+
+lemma peirce_law:
+  shows "((a ⟶ b) ⟶ a) = a"
+  apply (rule iffI)      (* 1. Split thành 2 chiều *)
+   apply (rule classical)   (* 2. Assume ¬a, prove False *)
+   apply (drule mp)         (* 3. Modus ponens, cần prove a⟶b *)
+    apply (rule impI)       (* 4. Assume a, prove b *)
+    apply (erule notE)      (* 6. Từ a, ¬a → False *)
+    apply assumption        (* 7. Goal = assumption *)
+   apply (erule notE)       (* 8. Lại dùng notE *)
+   apply assumption         (* 9. DONE chiều 1 *)
+  apply (rule impI)         (* 10. Assume a⟶b *)
+  apply assumption          (* 11. DONE! *)
+  done
+
+
+
+end
