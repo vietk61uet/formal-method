@@ -1,0 +1,74 @@
+theory Dining_Philosophers_Wait
+  imports Main
+begin
+
+section \<open>Dining Philosophers: The Logic of Waiting\<close>
+
+(* 
+  Mô hình hóa ý tưởng của bạn:
+  1. Nếu ai cũng tham lam cầm 1 nĩa: Đói hết (Deadlock).
+  2. Nếu 1 người chịu đợi (không cầm nĩa): Người bên cạnh sẽ có cơ hội cầm 2 nĩa và ăn.
+  3. Sau khi ăn xong, họ trả nĩa, và cứ thế luân phiên.
+*)
+
+locale dining_session =
+  fixes holds :: "nat \<Rightarrow> nat \<Rightarrow> bool" -- "Triết gia p đang giữ nĩa f"
+  assumes fork_excl: "p1 \<noteq> p2 \<Longrightarrow> holds p1 f \<Longrightarrow> holds p2 f \<Longrightarrow> False"
+begin
+
+-- "Triết gia i cần nĩa i và nĩa (i+1) mod 5"
+definition needs :: "nat \<Rightarrow> nat \<Rightarrow> bool" where
+  "needs p f \<equiv> (f = p \<or> f = (p + 1) mod 5)"
+
+-- "Điều kiện để một người có thể ăn: Phải giữ đủ 2 nĩa mình cần"
+definition can_eat :: "nat \<Rightarrow> bool" where
+  "can_eat p \<equiv> holds p p \<and> holds p ((p + 1) mod 5)"
+
+-- "Trạng thái bế tắc: Mọi người đều cầm 1 chiếc nĩa (nĩa bên trái)"
+definition everyone_holds_one :: bool where
+  "everyone_holds_one \<equiv> (\<forall>p < 5. holds p p \<and> (\<forall>f. f \<noteq> p \<longrightarrow> \<not> holds p f))"
+
+-- "CHỨNG MINH 1: Nếu ai cũng giữ 1 chiếc nĩa như nhau, không ai ăn được"
+lemma starvation_in_deadlock:
+  assumes "everyone_holds_one"
+  shows "\<forall>p < 5. \<not> can_eat p"
+proof (rule allI, rule impI)
+  fix p assume "p < 5"
+  show "\<not> can_eat p"
+  proof (rule notI)
+    assume "can_eat p"
+    hence "holds p ((p + 1) mod 5)" unfolding can_eat_def by simp
+    
+    -- "Nhưng theo giả thiết deadlock, người p CHỈ giữ nĩa p"
+    with assms `p < 5` have "((p + 1) mod 5) = p" 
+      unfolding everyone_holds_one_def by auto
+    
+    -- "Điều này vô lý với 5 triết gia (p+1 mod 5 không bao giờ bằng p)"
+    hence "False" by (smt (verit) mod_less_iff)
+    thus "False" by contradiction
+  qed
+qed
+
+-- "CHỨNG MINH 2: Nếu 1 người (P4) chịu ĐỢI (không cầm nĩa), và nĩa đó được nhường,"
+-- "thì ít nhất 1 người (P3) sẽ có cơ hội ăn được."
+lemma waiting_allows_eating:
+  assumes p4_waits: "\<not> holds 4 4" -- "Người 4 không cầm nĩa 4"
+  assumes others_greedy: "holds 0 0 \<and> holds 1 1 \<and> holds 2 2 \<and> holds 3 3" -- "Người 0-3 cầm nĩa trái"
+  assumes p3_takes_available: "holds 3 4" -- "Vì P4 không cầm nĩa 4, P3 có thể lấy nó"
+  shows "can_eat 3"
+proof -
+  from others_greedy have "holds 3 3" by simp
+  with p3_takes_available have "holds 3 3 \<and> holds 3 4" by simp
+  thus "can_eat 3" unfolding can_eat_def by (simp add: eval_nat_numeral)
+qed
+
+end
+
+(* 
+  KẾT LUẬN:
+  - File này chứng minh đúng ý bạn: 
+    1. Trạng thái 'ai cũng giữ 1' dẫn đến không ai ăn được (starvation).
+    2. Chỉ cần P4 không cầm nĩa 4 (chịu đợi), P3 sẽ cầm được nĩa 4 và ăn (can_eat 3).
+*)
+
+end

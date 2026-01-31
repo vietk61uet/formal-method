@@ -1,0 +1,67 @@
+theory Logic_Dota_Cases
+  imports Main
+begin
+
+(* 
+  Bài toán DotA 2:
+  Ký hiệu:
+  - p: Đang chơi DotA 2
+  - q: Đang xem DotA 2
+  - r: Đang đọc bài về DotA 2
+
+  Giả thiết:
+  1. H1: Nếu không đang chơi thì đang xem (~p -> q)
+  2. H2: Nếu không đang xem thì đang đọc (~q -> r)
+     (Câu văn: "Và nếu tôi cũng không xem DotA 2 thì tôi đang đọc..." 
+      có thể hiểu là trong ngữ cảnh đã không chơi, hoặc đơn giản là ~q -> r)
+  3. Loại trừ: Chỉ làm duy nhất một việc tại một thời điểm.
+     - ~ (p & q)
+     - ~ (p & r)
+     - ~ (q & r)
+     - p \/ q \/ r (Phải làm ít nhất một việc - từ câu quote)
+*)
+
+locale dota_logic =
+  fixes p q r :: bool
+  assumes h1: "\<not>p \<longrightarrow> q"
+      and h2: "\<not>q \<longrightarrow> r"
+      and excl_pq: "\<not>(p \<and> q)"
+      and excl_pr: "\<not>(p \<and> r)"
+      and excl_qr: "\<not>(q \<and> r)"
+begin
+
+lemma problem_1_not_r: "\<not>r"
+proof (rule notI)
+  assume "r"
+  -- "Chúng ta sẽ chứng minh rằng r dẫn đến mâu thuẫn bằng cách chia trường hợp cho q"
+  show "False"
+  proof (cases q)
+    assume "q"
+    -- "Nếu q đúng, mà r cũng đúng, mâu thuẫn với giả thiết loại trừ q và r"
+    from excl_qr `q` `r` show "False" by auto
+  next
+    assume "\<not>q"
+    -- "Nếu q sai, theo h1 (~p -> q), p phải đúng"
+    have "p"
+    proof (rule ccontr)
+      assume "\<not>p"
+      from h1 this have "q" by (rule mp)
+      with `\<not>q` show "False" by contradiction
+    qed
+    -- "Nếu p đúng và r đúng, mâu thuẫn với giả thiết loại trừ p và r"
+    from excl_pr `p` `r` show "False" by auto
+  qed
+qed
+
+lemma problem_2_is_watching: "q"
+proof (rule ccontr)
+  assume "\<not>q"
+  -- "Nếu không xem, theo h2 phải là đang đọc"
+  from h2 `\<not>q` have "r" by (rule mp)
+  -- "Nhưng ta đã chứng minh không thể là r ở câu trên"
+  with problem_1_not_r show "False" by contradiction
+qed
+
+end
+
+end

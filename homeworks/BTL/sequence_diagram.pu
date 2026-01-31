@@ -1,0 +1,39 @@
+@startuml Reliable_Message_Queue_Sequence
+skinparam backgroundColor #FFFFFF
+skinparam sequence {
+    ArrowColor #2563EB
+    LifeLineBorderColor #2563EB
+    ParticipantBorderColor #2563EB
+    ParticipantBackgroundColor #EFF6FF
+    GroupBorderColor #2563EB
+    GroupHeaderFontColor #2563EB
+}
+
+actor "Producer" as E
+participant "Queue (list)" as Q
+participant "Process (set)" as P
+participant "Retry (set)" as R
+participant "Finish (set)" as F
+actor "Consumer" as C
+
+alt m ∉ (Queue U Process U Retry U Finish)
+group step: enqueue
+    E -> Q : Queue = Queue.add(m)
+end
+
+group step: dequeue
+    Q -> P : Queue = Queue.remove(m)\nProcess = Process.add(m)
+end
+
+alt step: success
+    P -> F : Process = Process.remove(m)\nFinish = Finish.add(m)
+    F -> C
+else step: fail
+    P -> R : Process = Process.remove(m)\nRetry = Retry.add(m)
+    group step: retry
+        R -> Q : Retry = Retry.remove(m)\nProcess = Process.add(m)
+    end
+end
+end
+
+@enduml

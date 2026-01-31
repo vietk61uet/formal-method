@@ -1,0 +1,323 @@
+theory Dining_Philosophers_Manual
+  imports Main
+begin
+
+section ‹1. Cấu hình hệ thống (Locale)›
+
+locale Dining =
+  fixes N :: nat
+  assumes N_gt_1: "N > 1"
+begin
+
+type_synonym philosopher = nat
+type_synonym state = "philosopher set"
+
+section ‹2. Định nghĩa hàng xóm (Neighbors)›
+
+definition right :: "philosopher ⇒ philosopher" where
+  "right i = (i + 1) mod N"
+
+definition left :: "philosopher ⇒ philosopher" where
+  "left i = (i + N - 1) mod N"
+
+(* Bổ đề: Hàng xóm bên phải không phải là chính mình *)
+lemma right_neq_self:
+  assumes i_v: "i < N"
+  shows "right i ≠ i"
+proof -
+  have "(i + 1) mod N ≠ i"
+  proof (rule notI)
+    assume eq: "(i + 1) mod N = i"
+    have "i + 1 < N ∨ i + 1 ≥ N" by linarith
+    thus False
+    proof (rule disjE)
+      assume "i + 1 < N"
+      hence "(i + 1) mod N = i + 1" by (rule mod_less)
+      with eq have "i + 1 = i" by (rule trans)
+      thus False by linarith
+    next
+      assume "i + 1 ≥ N"
+      with i_v have "i + 1 = N" by linarith
+      hence "(i + 1) mod N = 0" by (simp add: mod_self)
+      with eq have "i = 0" by (rule sym)
+      with ‹i + 1 = N› have "N = 1" by linarith
+      with N_gt_1 show False by linarith
+    qed
+  qed
+  thus ?thesis unfolding right_def by assumption
+qed
+
+(* Bổ đề: Hàng xóm bên trái không phải là chính mình *)
+lemma left_neq_self:
+  assumes i_v: "i < N"
+  shows "left i ≠ i"
+proof -
+  have "(i + N - 1) mod N ≠ i"
+  proof (rule notI)
+    assume eq: "(i + N - 1) mod N = i"
+    show False
+    proof (cases "i = 0")
+      case True
+      with eq have "(0 + N - 1) mod N = 0" by (simp)
+      hence "(N - 1) mod N = 0" by simp
+      with N_gt_1 have "N - 1 = 0" 
+        apply (subst (asm) mod_less)
+        apply linarith
+        apply assumption
+        done
+      with N_gt_1 show False by linarith
+    next
+      case False
+      hence "i > 0" by linarith
+      hence "i + N - 1 = (i - 1) + N" by linarith
+      hence "(i + N - 1) mod N = ((i - 1) + N) mod N" by (rule arg_cong)
+      also have "... = (i - 1) mod N" by (rule mod_add_self2)
+      also have "... = i - 1" 
+      proof (rule mod_less)
+        from i_v show "i - 1 < N" by linarith
+      qed
+      finally have "(i + N - 1) mod N = i - 1" .
+      with eq have "i - 1 = i" by (rule sym)
+      thus False by linarith
+    qed
+  qed
+  thus ?thesis unfolding left_def by assumption
+qed
+
+(* Bổ đề nghịch đảo *)
+lemma left_right_inverse:
+  assumes i_v: "i < N"
+  shows "right (left i) = i" "left (right i) = i"
+proof -
+  show "right (left i) = i"
+    unfolding right_def left_def
+  proof (cases "i = 0")
+    case True
+    then have "((0 + N - 1) mod N + 1) mod N = ( (N - 1) mod N + 1) mod N" by simp
+    also have "... = (N - 1 + 1) mod N" using N_gt_1 by (simp add: mod_less)
+    also have "... = N mod N" by simp
+    also have "... = 0" by (rule mod_self)
+    finally show "((i + N - 1) mod N + 1) mod N = i" using True by (rule sym)
+  next
+    case False
+    hence "i > 0" by linarith
+    hence "((i + N - 1) mod N + 1) mod N = ((i - 1 + N) mod N + 1) mod N" 
+      by (simp add: linarith_simps)
+    hence "((i + N - 1) mod N + 1) mod N = ((i - 1) mod N + 1) mod N"
+      by (simp add: mod_add_self2)
+    also have "... = (i - 1 + 1) mod N" 
+    proof (subst mod_add_left_eq [symmetric])
+      show "(i - 1) mod N + 1 = ( (i - 1) mod N + 1 )" by (rule refl)
+    qed
+    also have "... = i mod N" by simp
+    also have "... = i" by (rule mod_less) (rule i_v)
+    finally show "((i + N - 1) mod N + 1) mod N = i" by assumption
+  qed
+
+  show "left (right i) = i"
+    unfolding left_def right_def
+  proof (cases "i = N - 1")
+    case True
+    then have "((i + 1) mod N + N - 1) mod N = (N mod N + N - 1) mod N" by simp
+    also have "... = (0 + N - 1) mod N" by (simp add: mod_self)
+    also have "... = (N - 1) mod N" by simp
+    also have "... = N - 1" using N_gt_1 by (rule mod_less) linarith
+    finally show "((i + 1) mod N + N - 1) mod N = i" using True by (rule sym)
+  next
+    case False
+    with i_v have "i + 1 < N" by linarith
+    hence "((i + 1) mod N + N - 1) mod N = (i + 1 + N - 1) mod N" by (simp add: mod_less)
+    also have "... = (i + N) mod N" by simp
+    also have "... = i mod N" by (rule mod_add_self2)
+    also have "... = i" by (rule mod_less) (rule i_v)
+    finally show "((i + 1) mod N + N - 1) mod N = i" by assumption
+  qed
+qed
+
+section ‹3. Trạng thái và Bước chuyển (Transitions)›
+
+definition init :: state where
+  "init = {}"
+
+inductive transitions :: "state ⇒ state ⇒ bool" where
+  exit:
+    "i ∈ s ⟹ transitions s (s - {i})"
+| enter:
+    "⟦ i ∉ s; i < N; right i ∉ s; left i ∉ s ⟧
+     ⟹ transitions s (insert i s)"
+
+inductive_set reachable :: "state set" where
+  init_reachable:
+    "init ∈ reachable"
+| step_reachable:
+    "⟦ s ∈ reachable; transitions s s' ⟧
+     ⟹ s' ∈ reachable"
+
+section ‹4. Tính an toàn (Safety Invariant)›
+
+definition safe :: "state ⇒ bool" where
+  "safe s ≡
+     (∀i∈s. i < N) ∧
+     (∀i∈s. right i ∉ s ∧ left i ∉ s)"
+
+section ‹5. Bảo toàn tính an toàn›
+
+(* Chứng minh thủ công: Rời bàn luôn an toàn *)
+lemma safe_exit:
+  assumes s_safe: "safe s" 
+      and i_s: "i ∈ s"
+  shows "safe (s - {i})"
+proof (unfold safe_def, rule conjI)
+  show "∀j∈s - {i}. j < N"
+  proof (rule ballI)
+    fix j assume "j ∈ s - {i}"
+    hence "j ∈ s" by (rule DiffD1)
+    with s_safe show "j < N" unfolding safe_def by (rule conjunct1 [THEN bspec])
+  qed
+next
+  show "∀j∈s - {i}. right j ∉ s - {i} ∧ left j ∉ s - {i}"
+  proof (rule ballI)
+    fix j assume "j ∈ s - {i}"
+    hence j_s: "j ∈ s" by (rule DiffD1)
+    with s_safe have no_conf: "right j ∉ s ∧ left j ∉ s" 
+      unfolding safe_def by (rule conjunct2 [THEN bspec])
+    
+    show "right j ∉ s - {i} ∧ left j ∉ s - {i}"
+    proof (rule conjI)
+      from no_conf have "right j ∉ s" by (rule conjunct1)
+      thus "right j ∉ s - {i}" by (rule contra_subsetD) (rule Diff_subset)
+    next
+      from no_conf have "left j ∉ s" by (rule conjunct2)
+      thus "left j ∉ s - {i}" by (rule contra_subsetD) (rule Diff_subset)
+    qed
+  qed
+qed
+
+(* Chứng minh thủ công: Vào bàn an toàn *)
+lemma safe_enter:
+  assumes s_safe: "safe s"
+      and i_not_s: "i ∉ s" 
+      and i_v: "i < N"
+      and Ri_not_s: "right i ∉ s" 
+      and Li_not_s: "left i ∉ s"
+  shows "safe (insert i s)"
+proof (unfold safe_def, rule conjI)
+  show "∀j∈insert i s. j < N"
+  proof (rule ballI)
+    fix j assume "j ∈ insert i s"
+    thus "j < N"
+    proof (rule insertE)
+      assume "j = i"
+      with i_v show "j < N" by (rule subst)
+    next
+      assume "j ∈ s"
+      with s_safe show "j < N" unfolding safe_def by (rule conjunct1 [THEN bspec])
+    qed
+  qed
+next
+  show "∀j∈insert i s. right j ∉ insert i s ∧ left j ∉ insert i s"
+  proof (rule ballI)
+    fix j assume j_in: "j ∈ insert i s"
+    show "right j ∉ insert i s ∧ left j ∉ insert i s"
+    proof (cases "j = i")
+      case True
+      show ?thesis
+      proof (rule conjI)
+        show "right j ∉ insert i s"
+        proof (rule notI)
+          assume "right j ∈ insert i s"
+          with True have "right i ∈ insert i s" by (rule subst)
+          thus False
+          proof (rule insertE)
+            assume "right i = i"
+            with i_v show False by (rule right_neq_self [THEN notE])
+          next
+            assume "right i ∈ s"
+            with Ri_not_s show False by (rule notE)
+          qed
+        qed
+      next
+        show "left j ∉ insert i s"
+        proof (rule notI)
+          assume "left j ∈ insert i s"
+          with True have "left i ∈ insert i s" by (rule subst)
+          thus False
+          proof (rule insertE)
+            assume "left i = i"
+            with i_v show False by (rule left_neq_self [THEN notE])
+          next
+            assume "left i ∈ s"
+            with Li_not_s show False by (rule notE)
+          qed
+        qed
+      qed
+    next
+      case False
+      hence j_s: "j ∈ s" using j_in by (rule insertE) (rule False [THEN notE], assumption)
+      with s_safe have j_v: "j < N" unfolding safe_def by (rule conjunct1 [THEN bspec])
+      with s_safe j_s have Rj_not_s: "right j ∉ s" and Lj_not_s: "left j ∉ s" 
+        unfolding safe_def by (rule conjunct2 [THEN bspec, THEN conjunct1], rule conjunct2 [THEN bspec, THEN conjunct2])
+      
+      show ?thesis
+      proof (rule conjI)
+        show "right j ∉ insert i s"
+        proof (rule notI)
+          assume "right j ∈ insert i s"
+          thus False
+          proof (rule insertE)
+            assume Rj_i: "right j = i"
+            hence "left (right j) = left i" by (rule arg_cong)
+            with j_v have "j = left i" by (simp add: left_right_inverse)
+            with j_s have "left i ∈ s" by (rule subst)
+            with Li_not_s show False by (rule notE)
+          qed (rule Rj_not_s [THEN notE])
+        qed
+      next
+        show "left j ∉ insert i s"
+        proof (rule notI)
+          assume "left j ∈ insert i s"
+          thus False
+          proof (rule insertE)
+            assume Lj_i: "left j = i"
+            hence "right (left j) = right i" by (rule arg_cong)
+            with j_v have "j = right i" by (simp add: left_right_inverse)
+            with j_s have "right i ∈ s" by (rule subst)
+            with Ri_not_s show False by (rule notE)
+          qed (rule Lj_not_s [THEN notE])
+        qed
+      qed
+    qed
+  qed
+qed
+
+section ‹6. Định lý chính (Safety)›
+
+theorem safety_invariant:
+  assumes "s ∈ reachable"
+  shows "safe s"
+  using assms
+proof (induction rule: reachable.induct)
+  case init_reachable
+  show ?case unfolding safe_def init_def
+  proof (rule conjI)
+    show "∀i∈{}. i < N" by (rule ballI) (rule emptyE)
+  next
+    show "∀i∈{}. right i ∉ {} ∧ left i ∉ {}" by (rule ballI) (rule emptyE)
+  qed
+next
+  case (step_reachable s s')
+  from ‹transitions s s'› show ?case
+  proof (rule transitions.cases)
+    fix i assume "i ∈ s" and s'_def: "s' = s - {i}"
+    from step_reachable.IH this(1) show "safe s'"
+      unfolding s'_def by (rule safe_exit)
+  next
+    fix i assume "i ∉ s" "i < N" "right i ∉ s" "left i ∉ s" and s'_def: "s' = insert i s"
+    from step_reachable.IH this(1-4) show "safe s'"
+      unfolding s'_def by (rule safe_enter)
+  qed
+qed
+
+end (* locale Dining *)
+
+end

@@ -6,6 +6,7 @@ lemma axiom_13:
   shows "((\<not>a \<longrightarrow> b) \<and> (a \<noteq> b)) \<or> ((a \<and> c) \<longrightarrow> (b \<and> c))"
 proof (cases "a \<and> c")
   case False
+  (* (a \<and> c) \<longrightarrow> (b \<and> c) là đúng vì tiền đề không xảy ra *)
   have "(a \<and> c) \<longrightarrow> (b \<and> c)"
   proof (rule impI)
     assume "a \<and> c"
